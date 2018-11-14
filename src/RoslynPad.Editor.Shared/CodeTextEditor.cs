@@ -36,388 +36,393 @@ using ICSharpCode.AvalonEdit.Highlighting;
 
 namespace RoslynPad.Editor
 {
-    public class CodeTextEditor : TextEditor
+	public class CodeTextEditor : TextEditor
 #if AVALONIA
         , IStyleable
 #endif
-    {
-        private CustomCompletionWindow _completionWindow;
-        private OverloadInsightWindow _insightWindow;
-        private ToolTip _toolTip;
+	{
+		private CustomCompletionWindow _completionWindow;
+		private OverloadInsightWindow _insightWindow;
+		private ToolTip _toolTip;
 
 #if AVALONIA
         Type IStyleable.StyleKey => typeof(TextEditor);
 #endif
 
-        public CodeTextEditor()
-        {
-            Options = new TextEditorOptions
-            {
-                ConvertTabsToSpaces = true,
-                AllowScrollBelowDocument = true,
-                IndentationSize = 4,
-                EnableEmailHyperlinks = false,
-            };
+		public CodeTextEditor()
+		{
+			Options = new TextEditorOptions
+			{
+				ConvertTabsToSpaces = true,
+				AllowScrollBelowDocument = true,
+				IndentationSize = 4,
+				EnableEmailHyperlinks = false,
+			};
 
-            // TODO: remove this after bug fix
+			// TODO: remove this after bug fix
 #if AVALONIA
             var lineMargin = new LineNumberMargin { Margin = new Thickness(0, 0, 10, 0) };
             lineMargin[~TextBlock.ForegroundProperty] = this[~LineNumbersForegroundProperty];
             TextArea.LeftMargins.Insert(0, lineMargin);
 #else
-            ShowLineNumbers = true;
+			ShowLineNumbers = true;
 #endif
 
-            TextArea.TextView.VisualLinesChanged += OnVisualLinesChanged;
-            TextArea.TextEntering += OnTextEntering;
-            TextArea.TextEntered += OnTextEntered;
+			TextArea.TextView.VisualLinesChanged += OnVisualLinesChanged;
+			TextArea.TextEntering += OnTextEntering;
+			TextArea.TextEntered += OnTextEntered;
 
 #if AVALONIA
             PointerHover += OnMouseHover;
             PointerHoverStopped += OnMouseHoverStopped;
 #else
-            MouseHover += OnMouseHover;
-            MouseHoverStopped += OnMouseHoverStopped;
+			MouseHover += OnMouseHover;
+			MouseHoverStopped += OnMouseHoverStopped;
 
-            ToolTipService.SetInitialShowDelay(this, 0);
-            SearchReplacePanel.Install(this);
+			ToolTipService.SetInitialShowDelay(this, 0);
+			SearchReplacePanel.Install(this);
 #endif
 
-            var commandBindings = TextArea.CommandBindings;
-            var deleteLineCommand = commandBindings.OfType<CommandBinding>().FirstOrDefault(x =>
-                x.Command == AvalonEditCommands.DeleteLine);
-            if (deleteLineCommand != null)
-            {
-                commandBindings.Remove(deleteLineCommand);
-            }
+			var commandBindings = TextArea.CommandBindings;
+			var deleteLineCommand = commandBindings.OfType<CommandBinding>().FirstOrDefault(x =>
+				x.Command == AvalonEditCommands.DeleteLine);
+			if (deleteLineCommand != null)
+			{
+				commandBindings.Remove(deleteLineCommand);
+			}
 
-            var contextMenu = new ContextMenu();
-            contextMenu.SetItems(new[]
-            {
-                new MenuItem {Command = ApplicationCommands.Cut},
-                new MenuItem {Command = ApplicationCommands.Copy},
-                new MenuItem {Command = ApplicationCommands.Paste}
-            });
-            ContextMenu = contextMenu;
-        }
+			var contextMenu = new ContextMenu();
+			contextMenu.SetItems(new[]
+			{
+				new MenuItem {Command = ApplicationCommands.Cut},
+				new MenuItem {Command = ApplicationCommands.Copy},
+				new MenuItem {Command = ApplicationCommands.Paste}
+			});
+			ContextMenu = contextMenu;
+		}
 
-        public static readonly StyledProperty<Brush> CompletionBackgroundProperty = CommonProperty.Register<CodeTextEditor, Brush>(
-            nameof(CompletionBackground), CreateDefaultCompletionBackground());
+		public static readonly StyledProperty<Brush> CompletionBackgroundProperty = CommonProperty.Register<CodeTextEditor, Brush>(
+			nameof(CompletionBackground), CreateDefaultCompletionBackground());
 
-        public bool IsCompletionWindowOpen => _completionWindow?.IsVisible == true;
+		public CompletionWindow GetCompletionWindow => _completionWindow;
 
-        public void CloseCompletionWindow()
-        {
-            if (_completionWindow != null)
-            {
-                _completionWindow.Close();
-                _completionWindow = null;
-            }
-        }
+		public bool IsCompletionWindowOpen => _completionWindow?.IsVisible == true;
 
-        public bool IsInsightWindowOpen => _insightWindow?.IsVisible == true;
+		public void CloseCompletionWindow()
+		{
+			if (_completionWindow != null)
+			{
+				_completionWindow.Close();
+				_completionWindow = null;
+			}
+		}
 
-        public void CloseInsightWindow()
-        {
-            if (_insightWindow != null)
-            {
-                _insightWindow.Close();
-                _insightWindow = null;
-            }
-        }
+		public bool IsInsightWindowOpen => _insightWindow?.IsVisible == true;
 
-        private static Brush CreateDefaultCompletionBackground()
-        {
-            return new SolidColorBrush(Color.FromRgb(240, 240, 240)).AsFrozen();
-        }
+		public void CloseInsightWindow()
+		{
+			if (_insightWindow != null)
+			{
+				_insightWindow.Close();
+				_insightWindow = null;
+			}
+		}
 
-        public Brush CompletionBackground
-        {
-            get => this.GetValue(CompletionBackgroundProperty);
-            set => this.SetValue(CompletionBackgroundProperty, value);
-        }
+		private static Brush CreateDefaultCompletionBackground()
+		{
+			return new SolidColorBrush(Color.FromRgb(240, 240, 240)).AsFrozen();
+		}
 
-        protected override void OnKeyDown(KeyEventArgs e)
-        {
-            base.OnKeyDown(e);
+		public Brush CompletionBackground
+		{
+			get => this.GetValue(CompletionBackgroundProperty);
+			set => this.SetValue(CompletionBackgroundProperty, value);
+		}
 
-            if (e.Key == Key.Space && e.HasModifiers(ModifierKeys.Control))
-            {
-                e.Handled = true;
-                var mode = e.HasModifiers(ModifierKeys.Shift)
-                    ? TriggerMode.SignatureHelp
-                    : TriggerMode.Completion;
-                // ReSharper disable once UnusedVariable
-                var task = ShowCompletion(mode);
-            }
-        }
+		protected override void OnKeyDown(KeyEventArgs e)
+		{
+			base.OnKeyDown(e);
 
-        private enum TriggerMode
-        {
-            Text,
-            Completion,
-            SignatureHelp
-        }
+			if (e.Key == Key.Space && e.HasModifiers(ModifierKeys.Control))
+			{
+				e.Handled = true;
+				var mode = e.HasModifiers(ModifierKeys.Shift)
+					? TriggerMode.SignatureHelp
+					: TriggerMode.Completion;
+				// ReSharper disable once UnusedVariable
+				var task = ShowCompletion(mode);
+			}
+		}
 
-        public static readonly RoutedEvent ToolTipRequestEvent = CommonEvent.Register<CodeTextEditor, ToolTipRequestEventArgs>(
-            nameof(ToolTipRequest), RoutingStrategy.Bubble);
+		private enum TriggerMode
+		{
+			Text,
+			Completion,
+			SignatureHelp
+		}
 
-        public Func<ToolTipRequestEventArgs, Task> AsyncToolTipRequest { get; set; }
+		public static readonly RoutedEvent ToolTipRequestEvent = CommonEvent.Register<CodeTextEditor, ToolTipRequestEventArgs>(
+			nameof(ToolTipRequest), RoutingStrategy.Bubble);
 
-        public event EventHandler<ToolTipRequestEventArgs> ToolTipRequest
-        {
-            add => AddHandler(ToolTipRequestEvent, value);
-            remove => RemoveHandler(ToolTipRequestEvent, value);
-        }
+		public Func<ToolTipRequestEventArgs, Task> AsyncToolTipRequest { get; set; }
 
-        private void OnVisualLinesChanged(object sender, EventArgs e)
-        {
-            _toolTip?.Close(this);
-        }
+		public event EventHandler<ToolTipRequestEventArgs> ToolTipRequest
+		{
+			add => AddHandler(ToolTipRequestEvent, value);
+			remove => RemoveHandler(ToolTipRequestEvent, value);
+		}
 
-        private void OnMouseHoverStopped(object sender, MouseEventArgs e)
-        {
-            if (_toolTip != null)
-            {
-                _toolTip.Close(this);
-                e.Handled = true;
-            }
-        }
+		private void OnVisualLinesChanged(object sender, EventArgs e)
+		{
+			_toolTip?.Close(this);
+		}
 
-        private async void OnMouseHover(object sender, MouseEventArgs e)
-        {
-            TextViewPosition? position;
-            try
-            {
-                position = TextArea.TextView.GetPositionFloor(e.GetPosition(TextArea.TextView) + TextArea.TextView.ScrollOffset);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                // TODO: check why this happens
-                e.Handled = true;
-                return;
-            }
-            var args = new ToolTipRequestEventArgs { InDocument = position.HasValue };
-            if (!position.HasValue || position.Value.Location.IsEmpty)
-            {
-                return;
-            }
+		private void OnMouseHoverStopped(object sender, MouseEventArgs e)
+		{
+			if (_toolTip != null)
+			{
+				_toolTip.Close(this);
+				e.Handled = true;
+			}
+		}
 
-            args.LogicalPosition = position.Value.Location;
-            args.Position = Document.GetOffset(position.Value.Line, position.Value.Column);
+		private async void OnMouseHover(object sender, MouseEventArgs e)
+		{
+			TextViewPosition? position;
+			try
+			{
+				position = TextArea.TextView.GetPositionFloor(e.GetPosition(TextArea.TextView) + TextArea.TextView.ScrollOffset);
+			}
+			catch (ArgumentOutOfRangeException)
+			{
+				// TODO: check why this happens
+				e.Handled = true;
+				return;
+			}
+			var args = new ToolTipRequestEventArgs { InDocument = position.HasValue };
+			if (!position.HasValue || position.Value.Location.IsEmpty)
+			{
+				return;
+			}
 
-            RaiseEvent(args);
+			args.LogicalPosition = position.Value.Location;
+			args.Position = Document.GetOffset(position.Value.Line, position.Value.Column);
 
-            if (args.ContentToShow == null)
-            {
-                var asyncRequest = AsyncToolTipRequest?.Invoke(args);
-                if (asyncRequest != null)
-                {
-                    await asyncRequest.ConfigureAwait(true);
-                }
-            }
+			RaiseEvent(args);
 
-            if (args.ContentToShow == null) return;
+			if (args.ContentToShow == null)
+			{
+				var asyncRequest = AsyncToolTipRequest?.Invoke(args);
+				if (asyncRequest != null)
+				{
+					await asyncRequest.ConfigureAwait(true);
+				}
+			}
 
-            if (_toolTip == null)
-            {
-                _toolTip = new ToolTip { MaxWidth = 400 };
+			if (args.ContentToShow == null) return;
+
+			if (_toolTip == null)
+			{
+				_toolTip = new ToolTip { MaxWidth = 400 };
 #if !AVALONIA
-                _toolTip.Closed += (o, a) => _toolTip = null;
-                ToolTipService.SetInitialShowDelay(_toolTip, 0);
-                _toolTip.PlacementTarget = this; // required for property inheritance
+				_toolTip.Closed += (o, a) => _toolTip = null;
+				ToolTipService.SetInitialShowDelay(_toolTip, 0);
+				_toolTip.PlacementTarget = this; // required for property inheritance
 #endif
-            }
+			}
 
-            if (args.ContentToShow is string stringContent)
-            {
-                _toolTip.SetContent(this, new TextBlock
-                {
-                    Text = stringContent,
-                    TextWrapping = TextWrapping.Wrap
-                });
-            }
-            else
-            {
-                _toolTip.SetContent(this, args.ContentToShow);
-            }
+			if (args.ContentToShow is string stringContent)
+			{
+				_toolTip.SetContent(this, new TextBlock
+				{
+					Text = stringContent,
+					TextWrapping = TextWrapping.Wrap
+				});
+			}
+			else
+			{
+				_toolTip.SetContent(this, args.ContentToShow);
+			}
 
-            e.Handled = true;
-            _toolTip.Open(this);
+			e.Handled = true;
+			_toolTip.Open(this);
 #if AVALONIA
             _toolTip.InvalidateVisual();
 #endif
-        }
+		}
 
-        #region Open & Save File
+		#region Open & Save File
 
-        public void OpenFile(string fileName)
-        {
-            if (!File.Exists(fileName))
-            {
-                throw new FileNotFoundException(fileName);
-            }
+		public void OpenFile(string fileName)
+		{
+			if (!File.Exists(fileName))
+			{
+				throw new FileNotFoundException(fileName);
+			}
 
-            _completionWindow?.Close();
-            _insightWindow?.Close();
+			_completionWindow?.Close();
+			_insightWindow?.Close();
 
-            Load(fileName);
-            Document.FileName = fileName;
+			Load(fileName);
+			Document.FileName = fileName;
 
-            SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(Path.GetExtension(fileName));
-        }
+			SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(Path.GetExtension(fileName));
+		}
 
-        public bool SaveFile()
-        {
-            if (string.IsNullOrEmpty(Document.FileName))
-            {
-                return false;
-            }
+		public bool SaveFile()
+		{
+			if (string.IsNullOrEmpty(Document.FileName))
+			{
+				return false;
+			}
 
-            Save(Document.FileName);
-            return true;
-        }
+			Save(Document.FileName);
+			return true;
+		}
 
-        #endregion
+		#endregion
 
-        #region Code Completion
+		#region Code Completion
 
-        public ICodeEditorCompletionProvider CompletionProvider { get; set; }
+		public ICodeEditorCompletionProvider CompletionProvider { get; set; }
 
-        private void OnTextEntered(object sender, TextCompositionEventArgs e)
-        {
-            // ReSharper disable once UnusedVariable
-            var task = ShowCompletion(TriggerMode.Text);
-        }
+		private void OnTextEntered(object sender, TextCompositionEventArgs e)
+		{
+			// ReSharper disable once UnusedVariable
+			var task = ShowCompletion(TriggerMode.Text);
+		}
 
-        private async Task ShowCompletion(TriggerMode triggerMode)
-        {
-            if (CompletionProvider == null)
-            {
-                return;
-            }
+		private async Task ShowCompletion(TriggerMode triggerMode)
+		{
+			if (CompletionProvider == null)
+			{
+				return;
+			}
 
-            GetCompletionDocument(out var offset);
-            var completionChar = triggerMode == TriggerMode.Text ? Document.GetCharAt(offset - 1) : (char?)null;
-            var results = await CompletionProvider.GetCompletionData(offset, completionChar,
-                        triggerMode == TriggerMode.SignatureHelp).ConfigureAwait(true);
-            if (results.OverloadProvider != null)
-            {
-                results.OverloadProvider.Refresh();
+			GetCompletionDocument(out var offset);
+			var completionChar = triggerMode == TriggerMode.Text ? Document.GetCharAt(offset - 1) : (char?)null;
+			var results = await CompletionProvider.GetCompletionData(offset, completionChar,
+						triggerMode == TriggerMode.SignatureHelp).ConfigureAwait(true);
+			if (results.OverloadProvider != null)
+			{
+				results.OverloadProvider.Refresh();
 
-                if (_insightWindow.IsOpen())
-                {
-                    _insightWindow.Provider = results.OverloadProvider;
-                }
-                else
-                {
-                    _insightWindow = new OverloadInsightWindow(TextArea)
-                    {
-                        Provider = results.OverloadProvider,
-                        Background = CompletionBackground,
-                        // TODO: style
+				if (_insightWindow.IsOpen())
+				{
+					_insightWindow.Provider = results.OverloadProvider;
+				}
+				else
+				{
+					_insightWindow = new OverloadInsightWindow(TextArea)
+					{
+						Provider = results.OverloadProvider,
+						Background = CompletionBackground,
+						// TODO: style
 #if !AVALONIA
-                        Style = TryFindResource(typeof(InsightWindow)) as Style
+						Style = TryFindResource(typeof(InsightWindow)) as Style
 #endif
-                    };
+					};
 
-                    _insightWindow.Closed += (o, args) => _insightWindow = null;
-                    _insightWindow.Show();
-                }
-                return;
-            }
+					_insightWindow.Closed += (o, args) => _insightWindow = null;
+					_insightWindow.Show();
+				}
+				return;
+			}
 
-            if (!_completionWindow.IsOpen() && results.CompletionData?.Any() == true)
-            {
-                _insightWindow?.Close();
+			if (!_completionWindow.IsOpen() && results.CompletionData?.Any() == true)
+			{
+				_insightWindow?.Close();
 
-                // Open code completion after the user has pressed dot:
-                _completionWindow = new CustomCompletionWindow(TextArea)
-                {
-                    MinWidth = 300,
+				// Open code completion after the user has pressed dot:
+				_completionWindow = new CustomCompletionWindow(TextArea)
+				{
+					MinWidth = 300,
 #if !AVALONIA
-                    Background = CompletionBackground,
+					Background = CompletionBackground,
 #endif
-                    CloseWhenCaretAtBeginning = triggerMode == TriggerMode.Completion || triggerMode == TriggerMode.Text,
-                    UseHardSelection = results.UseHardSelection,
-                };
+					CloseWhenCaretAtBeginning = triggerMode == TriggerMode.Completion || triggerMode == TriggerMode.Text,
+					UseHardSelection = results.UseHardSelection,
+				};
 
-                if (completionChar != null && char.IsLetterOrDigit(completionChar.Value))
-                {
-                    _completionWindow.StartOffset -= 1;
-                }
+				_completionWindow.CompletionList.ListBox.Background =
+					new SolidColorBrush(Color.FromRgb(46, 46, 48));
 
-                var data = _completionWindow.CompletionList.CompletionData;
-                ICompletionDataEx selected = null;
-                foreach (var completion in results.CompletionData)
-                {
-                    if (completion.IsSelected)
-                    {
-                        selected = completion;
-                    }
-                    data.Add(completion);
-                }
+				if (completionChar != null && char.IsLetterOrDigit(completionChar.Value))
+				{
+					_completionWindow.StartOffset -= 1;
+				}
 
-                _completionWindow.CompletionList.SelectedItem = selected;
+				var data = _completionWindow.CompletionList.CompletionData;
+				ICompletionDataEx selected = null;
+				foreach (var completion in results.CompletionData)
+				{
+					if (completion.IsSelected)
+					{
+						selected = completion;
+					}
+					data.Add(completion);
+				}
 
-                _completionWindow.Closed += (o, args) => { _completionWindow = null; };
-                _completionWindow.Show();
-            }
-        }
+				_completionWindow.CompletionList.SelectedItem = selected;
 
-        private void OnTextEntering(object sender, TextCompositionEventArgs args)
-        {
-            if (args.Text.Length > 0 && _completionWindow != null)
-            {
-                if (!char.IsLetterOrDigit(args.Text[0]))
-                {
-                    // Whenever a non-letter is typed while the completion window is open,
-                    // insert the currently selected element.
-                    _completionWindow.CompletionList.RequestInsertion(args);
-                }
-            }
-            // Do not set e.Handled=true.
-            // We still want to insert the character that was typed.
-        }
+				_completionWindow.Closed += (o, args) => { _completionWindow = null; };
+				_completionWindow.Show();
+			}
+		}
 
-        /// <summary>
-        /// Gets the document used for code completion, can be overridden to provide a custom document
-        /// </summary>
-        /// <param name="offset"></param>
-        /// <returns>The document of this text editor.</returns>
-        protected virtual IDocument GetCompletionDocument(out int offset)
-        {
-            offset = CaretOffset;
-            return Document;
-        }
+		private void OnTextEntering(object sender, TextCompositionEventArgs args)
+		{
+			if (args.Text.Length > 0 && _completionWindow != null)
+			{
+				if (!char.IsLetterOrDigit(args.Text[0]))
+				{
+					// Whenever a non-letter is typed while the completion window is open,
+					// insert the currently selected element.
+					_completionWindow.CompletionList.RequestInsertion(args);
+				}
+			}
+			// Do not set e.Handled=true.
+			// We still want to insert the character that was typed.
+		}
 
-        #endregion
+		/// <summary>
+		/// Gets the document used for code completion, can be overridden to provide a custom document
+		/// </summary>
+		/// <param name="offset"></param>
+		/// <returns>The document of this text editor.</returns>
+		protected virtual IDocument GetCompletionDocument(out int offset)
+		{
+			offset = CaretOffset;
+			return Document;
+		}
 
-        private class CustomCompletionWindow : CompletionWindow
-        {
-            private bool _isSoftSelectionActive;
-            private KeyEventArgs _keyDownArgs;
+		#endregion
 
-            public CustomCompletionWindow(TextArea textArea) : base(textArea)
-            {
-                _isSoftSelectionActive = true;
-                CompletionList.SelectionChanged += CompletionListOnSelectionChanged;
-                CompletionList.ListBox.SetBorderThickness(
-// TODO: find a better way
+		private class CustomCompletionWindow : CompletionWindow
+		{
+			private bool _isSoftSelectionActive;
+			private KeyEventArgs _keyDownArgs;
+
+			public CustomCompletionWindow(TextArea textArea) : base(textArea)
+			{
+				_isSoftSelectionActive = true;
+				CompletionList.SelectionChanged += CompletionListOnSelectionChanged;
+				CompletionList.ListBox.SetBorderThickness(
+					// TODO: find a better way
 #if AVALONIA
                     1
 #else
-                    0
+					0
 #endif
-                    );
+					);
 
 #if AVALONIA
                 CompletionList.ListBox.PointerPressed +=
 #else
-                CompletionList.ListBox.PreviewMouseDown +=
+				CompletionList.ListBox.PreviewMouseDown +=
 #endif
-                    (o, e) => _isSoftSelectionActive = false;
-            }
+					(o, e) => _isSoftSelectionActive = false;
+			}
 
 #if AVALONIA
             protected override void DetachEvents()
@@ -429,37 +434,37 @@ namespace RoslynPad.Editor
             }
 #endif
 
-            private void CompletionListOnSelectionChanged(object sender, SelectionChangedEventArgs args)
-            {
-                if (!UseHardSelection &&
-                    _isSoftSelectionActive && _keyDownArgs?.Handled != true
-                    && args.AddedItems?.Count > 0)
-                {
-                    CompletionList.SelectedItem = null;
-                }
-            }
+			private void CompletionListOnSelectionChanged(object sender, SelectionChangedEventArgs args)
+			{
+				if (!UseHardSelection &&
+					_isSoftSelectionActive && _keyDownArgs?.Handled != true
+					&& args.AddedItems?.Count > 0)
+				{
+					CompletionList.SelectedItem = null;
+				}
+			}
 
-            protected override void OnKeyDown(KeyEventArgs e)
-            {
-                if (e.Key == Key.Home || e.Key == Key.End) return;
+			protected override void OnKeyDown(KeyEventArgs e)
+			{
+				if (e.Key == Key.Home || e.Key == Key.End) return;
 
-                _keyDownArgs = e;
+				_keyDownArgs = e;
 
-                base.OnKeyDown(e);
+				base.OnKeyDown(e);
 
-                SetSoftSelection(e);
-            }
+				SetSoftSelection(e);
+			}
 
-            private void SetSoftSelection(RoutedEventArgs e)
-            {
-                if (e.Handled)
-                {
-                    _isSoftSelectionActive = false;
-                }
-            }
+			private void SetSoftSelection(RoutedEventArgs e)
+			{
+				if (e.Handled)
+				{
+					_isSoftSelectionActive = false;
+				}
+			}
 
-            // ReSharper disable once MemberCanBePrivate.Local
-            public bool UseHardSelection { get; set; }
-        }
-    }
+			// ReSharper disable once MemberCanBePrivate.Local
+			public bool UseHardSelection { get; set; }
+		}
+	}
 }
